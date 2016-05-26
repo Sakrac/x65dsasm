@@ -1278,8 +1278,8 @@ struct RefAddr {
 	int address:29;					// address
 	int data:3;						// 0 if code, 1 if data, 2 if pointers
 	int size:16;					// user specified size
-	int local:1;					// nonzero if local label
-	int separator:1;				// nonzero if following a separator
+	unsigned int local:1;			// nonzero if local label
+	unsigned int separator:1;		// nonzero if following a separator
 	int number:15;					// label count
 	strref label;					// user defined label
 	strref comment;
@@ -1322,14 +1322,14 @@ void GetReferences(unsigned char *mem, size_t bytes, bool acc_16, bool ind_16, i
 		strref name = lab_line.split_token_trim('=');
 		if (lab_line.get_first()=='$')
 			++lab_line;
-		unsigned int address = lab_line.ahextoui_skip();
+		unsigned int address = (unsigned int)lab_line.ahextoui_skip();
 		int size = 0;
 		lab_line.skip_whitespace();
 		if (lab_line.get_first()=='-') {
 			++lab_line;
 			if (lab_line.get_first()=='$')
 				++lab_line;
-			size = lab_line.ahextoui_skip() - address;
+			size = (int)(lab_line.ahextoui_skip() - address);
 			if (size<0)
 				size = 0;
 		}
@@ -1577,12 +1577,12 @@ void GetReferences(unsigned char *mem, size_t bytes, bool acc_16, bool ind_16, i
 		}
 		if (separator && curr_label>0 && refs[curr_label-1].data!=DT_PTRS && refs[curr_label-1].data!=DT_PTRS_DATA &&
 			curr!=refs[curr_label].address && !cutoff) {
-			int end_addr = curr_label<(int)refs.size() ? refs[curr_label].address : (int)(addr_orig + bytes_orig);
+			int end_addr_2 = curr_label<(int)refs.size() ? refs[curr_label].address : (int)(addr_orig + bytes_orig);
 			for (std::vector<RefAddr>::iterator k = refs.begin(); k!= refs.end(); ++k) {
 				std::vector<RefLink> &l = *k->pRefs;
 				std::vector<RefLink>::iterator r = l.begin();
 				while (r!=l.end()) {
-					if (r->instr_addr>=curr && r->instr_addr<end_addr) {
+					if (r->instr_addr>=curr && r->instr_addr<end_addr_2) {
 						r = l.erase(r);
 					} else
 						++r;
@@ -1655,11 +1655,11 @@ void GetReferences(unsigned char *mem, size_t bytes, bool acc_16, bool ind_16, i
 					int start = curr;
 					int end = (curr_label+1)<(int)refs.size() ? refs[curr_label+1].address : (int)(addr + bytes);
 					for (int k = 0; k<(int)refs.size(); ++k) {
-						std::vector<RefLink> &pRefs = *refs[k].pRefs;
-						std::vector<RefLink>::iterator r = pRefs.begin();
-						while (r != pRefs.end()) {
+						std::vector<RefLink> &pRefs_next = *refs[k].pRefs;
+						std::vector<RefLink>::iterator r = pRefs_next.begin();
+						while (r != pRefs_next.end()) {
 							if (r->instr_addr>=start && r->instr_addr<end) {
-								r = pRefs.erase(r);
+								r = pRefs_next.erase(r);
 							} else
 								++r;
 						}
@@ -1708,12 +1708,12 @@ void GetReferences(unsigned char *mem, size_t bytes, bool acc_16, bool ind_16, i
 
 	int last = (int)refs.size()-1;
 	while (last>1 && refs[last-1].data!=DT_CODE) {
-		int start_addr = refs[last].address;
+		int start_addr_loc = refs[last].address;
 		for (int k = 0; k<(int)refs.size(); ++k) {
 			std::vector<RefLink> &pRefs = *refs[k].pRefs;
 			std::vector<RefLink>::iterator r = pRefs.begin();
 			while (r != pRefs.end()) {
-				if (r->instr_addr>=start_addr && r->instr_addr<end_addr) {
+				if (r->instr_addr>=start_addr_loc && r->instr_addr<end_addr) {
 					r = pRefs.erase(r);
 				} else
 					++r;
@@ -1771,7 +1771,7 @@ void GetReferences(unsigned char *mem, size_t bytes, bool acc_16, bool ind_16, i
 			was_separator = !!refs[curr_label].separator || was_data;
 			curr_label++;
 		}
-		if (curr_label==refs.size())
+		if (curr_label==(int)refs.size())
 			break;
 		if (was_data || was_separator) {
 			int skip = refs[curr_label].address-addr;
@@ -1782,7 +1782,6 @@ void GetReferences(unsigned char *mem, size_t bytes, bool acc_16, bool ind_16, i
 			mem += skip;
 		} else {
 			unsigned char op = *mem++;
-			int curr = addr;
 			bytes--;
 			addr++;
 			if (opcodes == a65816_ops) {
@@ -2116,7 +2115,7 @@ void CallGraph(int start, int end, bool branches, FILE *f)
 						for (int j = 0; j<(int)refs.size(); ++j) {
 							if (!j || !refs[j].local)
 								jg = j;
-							if (c.address>=refs[j].address && ((j+1)==refs.size() || c.address<refs[j+1].address)) {
+							if (c.address>=refs[j].address && ((j+1)==(int)refs.size() || c.address<refs[j+1].address)) {
 								c.seg_addr = jg;
 								break;
 							}
@@ -2142,7 +2141,6 @@ void CallGraph(int start, int end, bool branches, FILE *f)
 	}
 
 	int seg = 0;
-	int call = 0;
 	for (int i = 0; i<(int)calls.size(); i++) {
 		if (calls[i].seg_addr>=0)
 			call_counts[calls[i].seg_addr]++;
@@ -2615,12 +2613,12 @@ int main(int argc, char **argv)
 		strref arg(argv[i]);
 		if (arg[0] == '$') {
 			++arg;
-			skip = arg.ahextoui_skip();
+			skip = (int)arg.ahextoui_skip();
 			if (arg.get_first() == '-') {
 				++arg;
 				if (arg.get_first() == '$') {
 					++arg;
-					end = arg.ahextoui();
+					end = (int)arg.ahextoui();
 				}
 			}
 		} else {
@@ -2641,7 +2639,7 @@ int main(int argc, char **argv)
 					out = argv[i];
 			} else {
 				if (var.same_str("mx")) {
-					int mx = arg.atoi();
+					int mx = (int)arg.atoi();
 					ind_16 = !!(mx & 1);
 					acc_16 = !!(mx & 2);
 				} else if (var.same_str("labels")) {
@@ -2649,13 +2647,13 @@ int main(int argc, char **argv)
 				} else if (var.same_str("addr")) {
 					if (arg.get_first() == '$')
 						++arg;
-					addr = arg.ahextoui();
+					addr = (int)arg.ahextoui();
 				} else if (var.same_str("data")) {
 					if (arg.get_first() == '$') {
 						++arg;
-						data = arg.ahextoui();
+						data = (int)arg.ahextoui();
 					} else
-						data = arg.atoi();
+						data = (int)arg.atoi();
 				} else if (var.same_str("cpu")) {
 					if (arg.same_str("65816"))
 						opcodes = a65816_ops;
