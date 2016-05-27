@@ -3,4 +3,7 @@
   <ItemGroup>
     <ClCompile Include="..\x65dsasm.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="..\struse.natvis" />
+  </ItemGroup>
 </Project>
